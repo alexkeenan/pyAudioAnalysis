@@ -93,9 +93,7 @@ def mid_feature_extraction(signal, sampling_rate, mid_window, mid_step,
 
     n_stats = 2
     n_feats = len(short_features)
-    #mid_window_ratio = int(round(mid_window / short_step))
-    mid_window_ratio = round((mid_window -
-                              (short_window - short_step)) / short_step)
+    mid_window_ratio = int(round(mid_window / short_step))
     mt_step_ratio = int(round(mid_step / short_step))
 
     mid_features, mid_feature_names = [], []
@@ -230,7 +228,6 @@ def multiple_directory_feature_extraction(path_list, mid_window, mid_step,
                                        'audioData/classSegmentsRec/brush-teeth',
                                        'audioData/classSegmentsRec/shower'], 1, 
                                        1, 0.02, 0.02);
-
     It can be used during the training process of a classification model ,
     in order to get feature matrices from various audio classes (each stored in
     a separate path)
@@ -245,6 +242,8 @@ def multiple_directory_feature_extraction(path_list, mid_window, mid_step,
             directory_feature_extraction(d, mid_window, mid_step,
                                          short_window, short_step,
                                          compute_beat=compute_beat)
+
+
         if f.shape[0] > 0:
             # if at least one audio file has been found in the provided folder:
             features.append(f)
@@ -254,6 +253,85 @@ def multiple_directory_feature_extraction(path_list, mid_window, mid_step,
             else:
                 class_names.append(d.split(os.sep)[-1])
     return features, class_names, file_names
+
+def word_token_feature_extraction(wav_file_list, mid_window, mid_step,
+                                 short_window, short_step,
+                                 compute_beat=True):
+    """
+    This function extracts the mid-term features of the WAVE files of a 
+    particular folder.
+
+    The resulting feature vector is extracted by long-term averaging the
+    mid-term features.
+    Therefore ONE FEATURE VECTOR is extracted for each WAV file.
+
+    ARGUMENTS:
+        - wav_file_list:        all paths to wave files
+        - mid_window, mid_step:    mid-term window and step (in seconds)
+        - short_window, short_step:    short-term window and step (in seconds)
+    """
+
+    mid_term_features = np.array([])
+    process_times = []
+
+    types = ('*.wav', '*.aif',  '*.aiff', '*.mp3', '*.au', '*.ogg')
+
+    #wav_file_list = sorted(wav_file_list)    
+    wav_file_list2, mid_feature_names = [], []
+    for i, file_path in enumerate(wav_file_list):
+        print("Analyzing file {0:d} of {1:d}: {2:s}".format(i + 1,
+                                                            len(wav_file_list),
+                                                            file_path))
+        if os.stat(file_path).st_size == 0:
+            print("   (EMPTY FILE -- SKIPPING)")
+            continue        
+        sampling_rate, signal = audioBasicIO.read_audio_file(file_path)
+        if sampling_rate == 0:
+            continue        
+
+        t1 = time.time()        
+        signal = audioBasicIO.stereo_to_mono(signal)
+        if signal.shape[0] < float(sampling_rate)/5:
+            print("  (AUDIO FILE TOO SMALL - SKIPPING)")
+            continue
+        wav_file_list2.append(file_path)
+        if compute_beat:
+            mid_features, short_features, mid_feature_names = \
+                mid_feature_extraction(signal, sampling_rate,
+                                       round(mid_window * sampling_rate),
+                                       round(mid_step * sampling_rate),
+                                       round(sampling_rate * short_window),
+                                       round(sampling_rate * short_step))
+            beat, beat_conf = beat_extraction(short_features, short_step)
+        else:
+            mid_features, _, mid_feature_names = \
+                mid_feature_extraction(signal, sampling_rate,
+                                       round(mid_window * sampling_rate),
+                                       round(mid_step * sampling_rate),
+                                       round(sampling_rate * short_window),
+                                       round(sampling_rate * short_step))
+
+        mid_features = np.transpose(mid_features)
+        mid_features = mid_features.mean(axis=0)
+        # long term averaging of mid-term statistics
+        if (not np.isnan(mid_features).any()) and \
+                (not np.isinf(mid_features).any()):
+            if compute_beat:
+                mid_features = np.append(mid_features, beat)
+                mid_features = np.append(mid_features, beat_conf)
+            if len(mid_term_features) == 0:
+                # append feature vector
+                mid_term_features = mid_features
+            else:
+                mid_term_features = np.vstack((mid_term_features, mid_features))
+            t2 = time.time()
+            duration = float(len(signal)) / sampling_rate
+            process_times.append((t2 - t1) / duration)
+    if len(process_times) > 0:
+        print("Feature extraction complexity ratio: "
+              "{0:.1f} x realtime".format((1.0 / 
+                                           np.mean(np.array(process_times)))))
+    return mid_term_features, wav_file_list2, mid_feature_names
 
 
 def directory_feature_extraction_no_avg(folder_path, mid_window, mid_step,
@@ -326,18 +404,16 @@ def mid_feature_extraction_to_file(file_path, mid_window, mid_step,
     a) read the content of a WAV file
     b) perform mid-term feature extraction on that signal
     c) write the mid-term feature sequences to a np file
-    d) optionally write contents to csv file as well
-    e) optionally write short-term features in csv and np file
     """
     sampling_rate, signal = audioBasicIO.read_audio_file(file_path)
     signal = audioBasicIO.stereo_to_mono(signal)
-    mid_features, short_features, _ = \
-        mid_feature_extraction(signal, sampling_rate,
-                               round(sampling_rate * mid_window),
-                               round(sampling_rate * mid_step),
-                               round(sampling_rate * short_window),
-                               round(sampling_rate * short_step))
     if store_short_features:
+        mid_features, short_features, _ = \
+            mid_feature_extraction(signal, sampling_rate,
+                                   round(sampling_rate * mid_window),
+                                   round(sampling_rate * mid_step),
+                                   round(sampling_rate * short_window),
+                                   (sampling_rate * short_step))
         # save st features to np file
         np.save(output_file + "_st", short_features)
         if plot:
@@ -347,15 +423,21 @@ def mid_feature_extraction_to_file(file_path, mid_window, mid_step,
             np.savetxt(output_file + "_st.csv", short_features.T, delimiter=",")
             if plot:
                 print("Short-term CSV file: " + output_file + "_st.csv saved")
-
-    # save mt features to np file
-    np.save(output_file + "_mt", mid_features)
-    if plot:
-        print("Mid-term np file: " + output_file + "_mt.npy saved")
-    if store_csv:
-        np.savetxt(output_file + "_mt.csv", mid_features.T, delimiter=",")
+    else:
+        mid_features, _, _ = \
+            mid_feature_extraction(signal, sampling_rate,
+                                   round(sampling_rate * mid_window),
+                                   round(sampling_rate * mid_step),
+                                   round(sampling_rate * short_window),
+                                   round(sampling_rate * short_step))
+        # save mt features to np file
+        np.save(output_file, mid_features)
         if plot:
-            print("Mid-term CSV file: " + output_file + "_mt.csv saved")
+            print("Mid-term np file: " + output_file + ".npy saved")
+        if store_csv:
+            np.savetxt(output_file + ".csv", mid_features.T, delimiter=",")
+            if plot:
+                print("Mid-term CSV file: " + output_file + ".csv saved")
 
 
 def mid_feature_extraction_file_dir(folder_path, mid_window, mid_step,

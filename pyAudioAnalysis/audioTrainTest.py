@@ -4,6 +4,7 @@ import numpy as np
 import os
 import glob
 import pickle as cPickle
+import signal
 import csv
 import ntpath
 from pyAudioAnalysis import MidTermFeatures as aF
@@ -17,6 +18,13 @@ import plotly
 import plotly.graph_objs as go
 import sklearn.metrics
 
+
+def signal_handler(signal, frame):
+    print('You pressed Ctrl+C! - EXIT')
+    os.system("stty -cbreak echo")
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, signal_handler)
 
 shortTermWindow = 0.050
 shortTermStep = 0.050
@@ -202,7 +210,34 @@ def train_random_forest(features, n_estimators):
 
     """
 
+    print("TRAINING RANDOMFOREST")
+
     feature_matrix, labels = features_to_matrix(features)
+    rf = sklearn.ensemble.RandomForestClassifier(n_estimators=n_estimators)
+    rf.fit(feature_matrix, labels)
+
+    return rf
+
+def train_random_forest_multilabel(features, n_estimators,labels):
+    """
+    Train a multi-class multi-label random forest classifier.
+    Note:     This function is simply a wrapper to the sklearn functionality
+              for model training.
+              See function extract_features_and_train() to use a wrapper on both
+              the feature extraction and the model training (and parameter
+              tuning) processes.
+    ARGUMENTS:
+        - features:         a list ([numOfClasses x 1]) whose elements
+                            containt np matrices of features
+                            each matrix features[i] of class i is
+                            [n_samples x numOfDimensions]
+        - n_estimators:     number of trees in the forest
+    RETURNS:
+        - rf:               the trained random forest
+
+    """
+
+    feature_matrix, labels = features_to_matrix(features,labels)
     rf = sklearn.ensemble.RandomForestClassifier(n_estimators=n_estimators)
     rf.fit(feature_matrix, labels)
 
@@ -272,9 +307,123 @@ def train_random_forest_regression(features, labels, n_estimators):
     return rf, train_err
 
 
+
+def extract_features_and_train_tokens(paths, labels, mid_window, mid_step, short_window,
+                               short_step, classifier_type, model_name,
+                               compute_beat=False, 
+                               train_percentage=0.90,
+                               class_parameter_mode=1):
+    """
+    This function is used as a wrapper to segment-based audio feature extraction
+    and classifier training.
+    ARGUMENTS:
+        paths:                      Full path names to wave files
+        mid_window, mid_step:       mid-term window length and step
+        short_window, short_step:   short-term window and step
+        classifier_type:            "svm" or "knn" or "randomforest" or
+                                    "gradientboosting" or "extratrees"
+        model_name:                 name of the model to be saved
+    RETURNS:
+        None. Resulting classifier along with the respective model
+        parameters are saved on files.
+    """
+
+    # STEP A: Feature Extraction:
+    features, class_names, _ = \
+        aF.word_token_feature_extraction(paths, mid_window, mid_step,
+                                                 short_window, short_step,
+                                                 compute_beat=compute_beat)
+
+    if len(features) == 0:
+        print("trainSVM_feature ERROR: No data found in any input folder!")
+        return
+
+    n_feats = features[0].shape[1]
+    feature_names = ["features" + str(d + 1) for d in range(n_feats)]
+
+    write_train_data_arff(model_name, features, class_names, feature_names)
+
+    for i, feat in enumerate(features):
+        if len(feat) == 0:
+            print("trainSVM_feature ERROR: " + paths[i] +
+                  " folder is empty or non-existing!")
+            return
+
+    # STEP B: classifier Evaluation and Parameter Selection:
+    if classifier_type == "svm" or classifier_type == "svm_rbf":
+        classifier_par = np.array([0.001, 0.01,  0.5, 1.0, 5.0, 10.0, 20.0])
+    elif classifier_type == "randomforest":
+        classifier_par = np.array([10, 25, 50, 100, 200, 500])
+    elif classifier_type == "knn":
+        classifier_par = np.array([1, 3, 5, 7, 9, 11, 13, 15])        
+    elif classifier_type == "gradientboosting":
+        classifier_par = np.array([10, 25, 50, 100, 200, 500])
+    elif classifier_type == "extratrees":
+        classifier_par = np.array([10, 25, 50, 100, 200, 500])
+    elif classifier_type == "randomforest_multilabel":
+        classifier_par = np.array([10, 25, 50, 100, 200, 500])
+
+    # get optimal classifeir parameter:
+    temp_features = []
+    for feat in features:
+        temp = []
+        for i in range(feat.shape[0]):
+            temp_fv = feat[i, :]
+            if (not np.isnan(temp_fv).any()) and (not np.isinf(temp_fv).any()):
+                temp.append(temp_fv.tolist())
+            else:
+                print("NaN Found! Feature vector not used for training")
+        temp_features.append(np.array(temp))
+    features = temp_features
+
+    best_param = evaluate_classifier(features, class_names, 100, classifier_type,
+                                     classifier_par, class_parameter_mode, train_percentage)
+
+    print("Selected params: {0:.5f}".format(best_param))
+
+    features_norm, mean, std = normalize_features(features)
+    mean = mean.tolist()
+    std = std.tolist()
+
+    # STEP C: Save the classifier to file
+    if classifier_type == "svm":
+        classifier = train_svm(features_norm, best_param)
+    elif classifier_type == "svm_rbf":
+        classifier = train_svm(features_norm, best_param, kernel='rbf')
+    elif classifier_type == "randomforest":
+        classifier = train_random_forest(features_norm, best_param)
+    elif classifier_type == "gradientboosting":
+        classifier = train_gradient_boosting(features_norm, best_param)
+    elif classifier_type == "extratrees":
+        classifier = train_extra_trees(features_norm, best_param)
+    elif classifier_type == "randomforest_multilabel":
+        classifier = train_random_forest_multilabel(features_norm, best_param,labels)
+
+    if classifier_type == "knn":
+        feature_matrix, labels = features_to_matrix(features_norm)
+        feature_matrix = feature_matrix.tolist()
+        labels = labels.tolist()
+        save_path = model_name
+        save_parameters(save_path, feature_matrix, labels, mean, std,
+                        class_names, best_param, mid_window, mid_step,
+                        short_window, short_step, compute_beat)
+
+    elif classifier_type == "svm" or classifier_type == "svm_rbf" or \
+            classifier_type == "randomforest" or \
+            classifier_type == "randomforest_multilabel" or \
+            classifier_type == "gradientboosting" or \
+            classifier_type == "extratrees":
+        with open(model_name, 'wb') as fid:
+            cPickle.dump(classifier, fid)
+        save_path = model_name + "MEANS"
+        save_parameters(save_path, mean, std, class_names, mid_window, mid_step,
+                        short_window, short_step, compute_beat)
+
+
+
 def extract_features_and_train(paths, mid_window, mid_step, short_window,
                                short_step, classifier_type, model_name,
-                               compute_beat=False, train_percentage=0.90):
+                               compute_beat=False, train_percentage=0.90,class_parameter_mode=1):
     """
     This function is used as a wrapper to segment-based audio feature extraction
     and classifier training.
@@ -338,8 +487,10 @@ def extract_features_and_train(paths, mid_window, mid_step, short_window,
         temp_features.append(np.array(temp))
     features = temp_features
 
+
+    print("ABOUT TO TRAIN")
     best_param = evaluate_classifier(features, class_names, 100, classifier_type,
-                                     classifier_par, 0, train_percentage)
+                                     classifier_par, class_parameter_mode, train_percentage)
 
     print("Selected params: {0:.5f}".format(best_param))
 
@@ -358,6 +509,7 @@ def extract_features_and_train(paths, mid_window, mid_step, short_window,
         classifier = train_gradient_boosting(features_norm, best_param)
     elif classifier_type == "extratrees":
         classifier = train_extra_trees(features_norm, best_param)
+
 
     if classifier_type == "knn":
         feature_matrix, labels = features_to_matrix(features_norm)
@@ -636,6 +788,9 @@ def evaluate_classifier(features, class_names, n_exp, classifier_name, params,
                 classifier = train_gradient_boosting(f_train, C)
             elif classifier_name == "extratrees":
                 classifier = train_extra_trees(f_train, C)
+            elif classifier_name=="randomforest_multilabel":
+                classifier = train_random_forest_multilabel(f_train, C)
+
 
             cmt = np.zeros((n_classes, n_classes))
             for c1 in range(n_classes):
@@ -854,7 +1009,7 @@ def normalize_features(features):
     return features_norm, mean, std
 
 
-def features_to_matrix(features):
+def features_to_matrix(features,multilabels=False):
     """
     features_to_matrix(features)
 
@@ -871,13 +1026,26 @@ def features_to_matrix(features):
 
     labels = np.array([])
     feature_matrix = np.array([])
-    for i, f in enumerate(features):
-        if i == 0:
-            feature_matrix = f
-            labels = i * np.ones((len(f), 1))
-        else:
-            feature_matrix = np.vstack((feature_matrix, f))
-            labels = np.append(labels, i * np.ones((len(f), 1)))
+    #if multilabel, -> means it's the full array with all the labels already
+    if multilabels:
+        for i, f in enumerate(features):
+            if i == 0:
+                feature_matrix = f
+            else:
+                feature_matrix = np.vstack((feature_matrix, f))
+        labels=multilabels
+
+    else:
+        for i, f in enumerate(features):
+            if i == 0:
+                feature_matrix = f
+                labels = i * np.ones((len(f), 1))
+            else:
+                feature_matrix = np.vstack((feature_matrix, f))
+                labels = np.append(labels, i * np.ones((len(f), 1)))
+
+    print("###########LABELS#########")
+    print(labels)
     return feature_matrix, labels
 
 
@@ -1152,6 +1320,8 @@ def lda(data, labels, red_dim):
 
 
 def write_train_data_arff(model_name, features, classNames, feature_names):
+
+
     f = open(model_name + ".arff", 'w')
     f.write('@RELATION ' + model_name + '\n')
     for fn in feature_names:
@@ -1161,6 +1331,7 @@ def write_train_data_arff(model_name, features, classNames, feature_names):
         f.write(classNames[c] + ',')
     f.write(classNames[-1] + '}\n\n')
     f.write('@DATA\n')
+
     for c, fe in enumerate(features):
         for i in range(fe.shape[0]):
             for j in range(fe.shape[1]):
