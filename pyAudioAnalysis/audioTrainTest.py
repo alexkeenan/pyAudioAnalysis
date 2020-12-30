@@ -3,7 +3,7 @@ import sys
 import numpy as np
 import os
 import glob
-import pickle as cPickle
+import pickle5 as cPickle
 import signal
 import csv
 import ntpath
@@ -17,6 +17,9 @@ import sklearn.ensemble
 import plotly
 import plotly.graph_objs as go
 import sklearn.metrics
+from sklearn.metrics import multilabel_confusion_matrix,f1_score
+import types
+from sklearn.model_selection import train_test_split
 
 
 def signal_handler(signal, frame):
@@ -82,16 +85,23 @@ def classifier_wrapper(classifier, classifier_type, test_sample):
     """
     class_id = -1
     probability = -1
-    if classifier_type == "knn":
-        class_id, probability = classifier.classify(test_sample)
-    elif classifier_type == "svm" or \
-            classifier_type == "randomforest" or \
-            classifier_type == "gradientboosting" or \
-            classifier_type == "extratrees" or \
-            classifier_type == "svm_rbf":
-        class_id = classifier.predict(test_sample.reshape(1, -1))[0]
-        probability = classifier.predict_proba(test_sample.reshape(1, -1))[0]
-    return class_id, probability
+
+    if classifier_type=="randomforest_multilabel":
+        test_sample=test_sample.reshape(1,-1)
+        class_id = classifier.predict(test_sample)
+
+        return class_id
+    else:
+        if classifier_type == "knn":
+            class_id, probability = classifier.classify(test_sample)
+        elif classifier_type == "svm" or \
+                classifier_type == "randomforest" or \
+                classifier_type == "gradientboosting" or \
+                classifier_type == "extratrees" or \
+                classifier_type == "svm_rbf":
+            class_id = classifier.predict(test_sample.reshape(1, -1))[0]
+            probability = classifier.predict_proba(test_sample.reshape(1, -1))[0]
+        return class_id, probability
 
 
 def regression_wrapper(model, model_type, test_sample):
@@ -140,7 +150,29 @@ def random_split_features(features, percentage):
         n_train = int(round(percentage * n_samples))
         f_train.append(feat[randperm[0:n_train]])
         f_test.append(feat[randperm[n_train::]])
+
     return f_train, f_test
+
+def random_split_features_multilabel(features, percentage,labels=False):
+    """
+    def randSplitFeatures(features):
+
+    This function splits a feature set for training and testing.
+
+    ARGUMENTS:
+        - features:         a list ([numOfClasses x 1]) whose elements 
+                            containt np matrices of features.
+                            each matrix features[i] of class i is 
+                            [n_samples x numOfDimensions]
+        - per_train:        percentage
+    RETURNS:
+        - featuresTrains:   a list of training data for each class
+        - f_test:           a list of testing data for each class
+    """
+    X_train, X_test, y_train, y_test = train_test_split(features[0], labels, test_size=1-percentage)
+
+    return X_train, X_test, y_train, y_test
+
 
 
 def train_knn(features, neighbors):
@@ -210,8 +242,6 @@ def train_random_forest(features, n_estimators):
 
     """
 
-    print("TRAINING RANDOMFOREST")
-
     feature_matrix, labels = features_to_matrix(features)
     rf = sklearn.ensemble.RandomForestClassifier(n_estimators=n_estimators)
     rf.fit(feature_matrix, labels)
@@ -237,7 +267,10 @@ def train_random_forest_multilabel(features, n_estimators,labels):
 
     """
 
+
     feature_matrix, labels = features_to_matrix(features,labels)
+
+
     rf = sklearn.ensemble.RandomForestClassifier(n_estimators=n_estimators)
     rf.fit(feature_matrix, labels)
 
@@ -307,12 +340,12 @@ def train_random_forest_regression(features, labels, n_estimators):
     return rf, train_err
 
 
-
-def extract_features_and_train_tokens(paths, labels, mid_window, mid_step, short_window,
+def extract_features_and_train_tokens(paths, class_names, mid_window, mid_step, short_window,
                                short_step, classifier_type, model_name,
                                compute_beat=False, 
                                train_percentage=0.90,
-                               class_parameter_mode=1):
+                               class_parameter_mode=1,
+                               labels=False):
     """
     This function is used as a wrapper to segment-based audio feature extraction
     and classifier training.
@@ -329,16 +362,18 @@ def extract_features_and_train_tokens(paths, labels, mid_window, mid_step, short
     """
 
     # STEP A: Feature Extraction:
-    features, class_names, _ = \
-        aF.word_token_feature_extraction(paths, mid_window, mid_step,
+    features,  _ = \
+        aF.token_paths_feature_extraction(paths, mid_window, mid_step,
                                                  short_window, short_step,
                                                  compute_beat=compute_beat)
+
 
     if len(features) == 0:
         print("trainSVM_feature ERROR: No data found in any input folder!")
         return
 
     n_feats = features[0].shape[1]
+
     feature_names = ["features" + str(d + 1) for d in range(n_feats)]
 
     write_train_data_arff(model_name, features, class_names, feature_names)
@@ -376,8 +411,9 @@ def extract_features_and_train_tokens(paths, labels, mid_window, mid_step, short
         temp_features.append(np.array(temp))
     features = temp_features
 
+
     best_param = evaluate_classifier(features, class_names, 100, classifier_type,
-                                     classifier_par, class_parameter_mode, train_percentage)
+                                     classifier_par, class_parameter_mode, train_percentage,labels=labels)
 
     print("Selected params: {0:.5f}".format(best_param))
 
@@ -446,6 +482,9 @@ def extract_features_and_train(paths, mid_window, mid_step, short_window,
         aF.multiple_directory_feature_extraction(paths, mid_window, mid_step,
                                                  short_window, short_step,
                                                  compute_beat=compute_beat)
+
+    print(f"features[0].shape {features[0].shape}")
+
 
     if len(features) == 0:
         print("trainSVM_feature ERROR: No data found in any input folder!")
@@ -717,7 +756,7 @@ def load_model(model_name, is_regression=False):
 
 
 def evaluate_classifier(features, class_names, n_exp, classifier_name, params,
-                        parameter_mode, train_percentage=0.90):
+                        parameter_mode, train_percentage=0.80,labels=None):
     """
     ARGUMENTS:
         features:     a list ([numOfClasses x 1]) whose elements containt
@@ -773,8 +812,10 @@ def evaluate_classifier(features, class_names, n_exp, classifier_name, params,
             print("Param = {0:.5f} - classifier Evaluation "
                   "Experiment {1:d} of {2:d}".format(C, e+1, n_exp))
             # split features:
-            f_train, f_test = random_split_features(features_norm,
-                                                    train_percentage)
+            if labels is not None:
+                f_train, f_test,labels_train,labels_test=random_split_features_multilabel(features_norm,train_percentage,labels=labels)
+            else:
+                f_train, f_test = random_split_features(features_norm,train_percentage)
             # train multi-class svms:
             if classifier_name == "svm":
                 classifier = train_svm(f_train, C)
@@ -789,27 +830,57 @@ def evaluate_classifier(features, class_names, n_exp, classifier_name, params,
             elif classifier_name == "extratrees":
                 classifier = train_extra_trees(f_train, C)
             elif classifier_name=="randomforest_multilabel":
-                classifier = train_random_forest_multilabel(f_train, C)
+                classifier = train_random_forest_multilabel(f_train, C,labels_train)
 
 
-            cmt = np.zeros((n_classes, n_classes))
-            for c1 in range(n_classes):
-                n_test_samples = len(f_test[c1])
-                res = np.zeros((n_test_samples, 1))
-                for ss in range(n_test_samples):
-                    res[ss], _ = classifier_wrapper(classifier,
-                                                    classifier_name,
-                                                    f_test[c1][ss])
-                for c2 in range(n_classes):
-                    cmt[c1][c2] = float(len(np.nonzero(res == c2)[0]))
+            if labels is not None:
+                #
+                y_pred=[classifier_wrapper(classifier,classifier_name,x) for x in f_test]
+                # res[ss], _ = classifier_wrapper(classifier,
+                #                                 classifier_name,
+                #                                 f_test)
+                y_pred=np.array(y_pred)
+                y_pred=y_pred.reshape(labels_test.shape[0],-1)
+                cmt=multilabel_confusion_matrix(labels_test, y_pred)
+
+            else:
+                cmt = np.zeros((n_classes, n_classes))
+                for c1 in range(n_classes):
+                    #f_test[c1] only picks out those test samples of a certain class already
+                    n_test_samples = len(f_test[c1])
+                    res = np.zeros((n_test_samples, 1))
+
+                    #predicting here
+                    #predict for a certain class
+                    for ss in range(n_test_samples):
+                        res[ss], _ = classifier_wrapper(classifier,
+                                                        classifier_name,
+                                                        f_test[c1][ss])
+
+                    #see how many were actually predicted 1
+                    for c2 in range(n_classes):
+                        cmt[c1][c2] = float(len(np.nonzero(res == c2)[0]))
+
             cm = cm + cmt
         cm = cm + 0.0000000010
         rec = np.zeros((cm.shape[0], ))
         pre = np.zeros((cm.shape[0], ))
 
-        for ci in range(cm.shape[0]):
-            rec[ci] = cm[ci, ci] / np.sum(cm[ci, :])
-            pre[ci] = cm[ci, ci] / np.sum(cm[:, ci])
+        #meaning I'm feeding it labels because it's multilabel
+        if labels is not None:
+            #cm.shape[0] is basically the number of labels
+            # with multilabel confusion matrix, there's one matrix per label that's produced
+            # it's one vs all, so each "mini" confusion matrix is always 2x2
+            for ci in range(cm.shape[0]):
+                #tp/(tp+fn)
+                rec[ci] = cm[ci,0, 0] / np.sum(cm[ci, :, 0])
+                #tp/(tp+fp)
+                pre[ci] = cm[ci,0, 0] / np.sum(cm[ci, 0,: ])
+
+        else: 
+            for ci in range(cm.shape[0]):
+                rec[ci] = cm[ci, ci] / np.sum(cm[ci, :])
+                pre[ci] = cm[ci, ci] / np.sum(cm[:, ci])
         pre_class_all.append(pre)
         rec_classes_all.append(rec)
         f1 = 2 * rec * pre / (rec + pre)
@@ -850,15 +921,22 @@ def evaluate_classifier(features, class_names, n_exp, classifier_name, params,
             print("\t best Acc", end="")
         print("")
 
+
+    print("Confusion Matrix:")
     if parameter_mode == 0:
-        # keep parameters that maximize overall classification accuracy:
-        print("Confusion Matrix:")
-        print_confusion_matrix(cms_all[best_ac_ind], class_names)
+
+        if labels is not None:
+            print_multilabel_confusion_matrix(cms_all[best_ac_ind], class_names)
+        else:
+            # keep parameters that maximize overall classification accuracy:
+            print_confusion_matrix(cms_all[best_ac_ind], class_names)
         return params[best_ac_ind]
     elif parameter_mode == 1:
-        # keep parameters that maximize overall f1 measure:
-        print("Confusion Matrix:")
-        print_confusion_matrix(cms_all[best_f1_ind], class_names)
+        if labels is not None:
+            print_multilabel_confusion_matrix(cms_all[best_f1_ind], class_names)
+        else:
+            # keep parameters that maximize overall f1 measure:
+            print_confusion_matrix(cms_all[best_f1_ind], class_names)
         return params[best_f1_ind]
 
 
@@ -962,15 +1040,46 @@ def print_confusion_matrix(cm, class_names):
     for c in class_names:
         if len(c) > 4:
             c = c[0:3]
-        print("\t{0:s}".format(c), end="")
+        print(f"\t{c}")
     print("")
 
     for i, c in enumerate(class_names):
         if len(c) > 4:
             c = c[0:3]
-        print("{0:s}".format(c), end="")
+        print(f"{c}")
         for j in range(len(class_names)):
-            print("\t{0:.2f}".format(100.0 * cm[i][j] / np.sum(cm)), end="")
+            print(f"\t{ 100.0 * cm[i][j] / np.sum(cm)}")
+        print("")
+
+def print_multilabel_confusion_matrix(cm, class_names):
+    """
+    This function prints a confusion matrix for a particular classification task.
+    ARGUMENTS:
+        cm:            a 2-D np array of the confusion matrix
+                       (cm[i,j] is the number of times a sample from class i
+                       was classified in class j)
+        class_names:    a list that contains the names of the classes
+    """
+
+    if cm.shape[0] != len(class_names):
+        print("printConfusionMatrix: Wrong argument sizes\n")
+        return
+
+    for c in class_names:
+        if len(c) > 4:
+            c = c[0:3]
+        print(f"\t{c}")
+    print("")
+
+    for i, c in enumerate(class_names):
+        print(c)
+        print(cm[i])
+        rec=cm[i,0, 0] / np.sum(cm[i, :, 0])
+        pre=cm[i,0, 0] / np.sum(cm[i, 0,: ])
+        f1 = 2 * rec * pre / (rec + pre)
+        print(f"recall: {rec}")
+        print(f"precision: {pre}")
+        print(f"f-1 score {f1}")
         print("")
 
 
@@ -1009,7 +1118,7 @@ def normalize_features(features):
     return features_norm, mean, std
 
 
-def features_to_matrix(features,multilabels=False):
+def features_to_matrix(features,multilabels=None):
     """
     features_to_matrix(features)
 
@@ -1027,7 +1136,7 @@ def features_to_matrix(features,multilabels=False):
     labels = np.array([])
     feature_matrix = np.array([])
     #if multilabel, -> means it's the full array with all the labels already
-    if multilabels:
+    if multilabels is not None:
         for i, f in enumerate(features):
             if i == 0:
                 feature_matrix = f
@@ -1044,8 +1153,8 @@ def features_to_matrix(features,multilabels=False):
                 feature_matrix = np.vstack((feature_matrix, f))
                 labels = np.append(labels, i * np.ones((len(f), 1)))
 
-    print("###########LABELS#########")
-    print(labels)
+    # print("###########LABELS#########")
+    # print(labels)
     return feature_matrix, labels
 
 

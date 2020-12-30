@@ -254,6 +254,31 @@ def multiple_directory_feature_extraction(path_list, mid_window, mid_step,
                 class_names.append(d.split(os.sep)[-1])
     return features, class_names, file_names
 
+
+def token_paths_feature_extraction(path_list, mid_window, mid_step,
+                                          short_window, short_step,
+                                          compute_beat=False):
+    """
+    Looping through paths to extract based on string tokens
+    """
+
+    print("got to token_paths_feature_extraction")
+
+    # feature extraction for each class:
+    features = []
+    file_names = []
+
+    f, fn, feature_names = \
+        word_token_feature_extraction(path_list, mid_window, mid_step,
+                                        short_window, short_step,
+                                        compute_beat=compute_beat)
+    if f.shape[0] > 0:
+        features.append(f)
+        file_names.append(fn)
+
+    return features,  file_names
+
+
 def word_token_feature_extraction(wav_file_list, mid_window, mid_step,
                                  short_window, short_step,
                                  compute_beat=True):
