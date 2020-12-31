@@ -89,8 +89,8 @@ def classifier_wrapper(classifier, classifier_type, test_sample):
     if classifier_type=="randomforest_multilabel":
         test_sample=test_sample.reshape(1,-1)
         class_id = classifier.predict(test_sample)
+        probability = classifier.predict_proba(test_sample)
 
-        return class_id
     else:
         if classifier_type == "knn":
             class_id, probability = classifier.classify(test_sample)
@@ -101,7 +101,7 @@ def classifier_wrapper(classifier, classifier_type, test_sample):
                 classifier_type == "svm_rbf":
             class_id = classifier.predict(test_sample.reshape(1, -1))[0]
             probability = classifier.predict_proba(test_sample.reshape(1, -1))[0]
-        return class_id, probability
+    return class_id, probability
 
 
 def regression_wrapper(model, model_type, test_sample):
@@ -154,21 +154,10 @@ def random_split_features(features, percentage):
     return f_train, f_test
 
 def random_split_features_multilabel(features, percentage,labels=False):
-    """
-    def randSplitFeatures(features):
 
-    This function splits a feature set for training and testing.
 
-    ARGUMENTS:
-        - features:         a list ([numOfClasses x 1]) whose elements 
-                            containt np matrices of features.
-                            each matrix features[i] of class i is 
-                            [n_samples x numOfDimensions]
-        - per_train:        percentage
-    RETURNS:
-        - featuresTrains:   a list of training data for each class
-        - f_test:           a list of testing data for each class
-    """
+    #check out what does feautures look like again?
+    #features are missing a few for some reason. Don't match up with labels
     X_train, X_test, y_train, y_test = train_test_split(features[0], labels, test_size=1-percentage)
 
     return X_train, X_test, y_train, y_test
@@ -343,7 +332,7 @@ def train_random_forest_regression(features, labels, n_estimators):
 def extract_features_and_train_tokens(paths, class_names, mid_window, mid_step, short_window,
                                short_step, classifier_type, model_name,
                                compute_beat=False, 
-                               train_percentage=0.90,
+                               train_percentage=0.80,
                                class_parameter_mode=1,
                                labels=False):
     """
@@ -378,11 +367,11 @@ def extract_features_and_train_tokens(paths, class_names, mid_window, mid_step, 
 
     write_train_data_arff(model_name, features, class_names, feature_names)
 
-    for i, feat in enumerate(features):
-        if len(feat) == 0:
-            print("trainSVM_feature ERROR: " + paths[i] +
-                  " folder is empty or non-existing!")
-            return
+    # for i, feat in enumerate(features):
+    #     if len(feat) == 0:
+    #         print("trainSVM_feature ERROR: " + paths[i] +
+    #               " folder is empty or non-existing!")
+    #         return
 
     # STEP B: classifier Evaluation and Parameter Selection:
     if classifier_type == "svm" or classifier_type == "svm_rbf":
@@ -398,8 +387,11 @@ def extract_features_and_train_tokens(paths, class_names, mid_window, mid_step, 
     elif classifier_type == "randomforest_multilabel":
         classifier_par = np.array([10, 25, 50, 100, 200, 500])
 
-    # get optimal classifeir parameter:
+
     temp_features = []
+
+    print("BEFORE temp_features section")
+    print(len(features))
     for feat in features:
         temp = []
         for i in range(feat.shape[0]):
@@ -410,6 +402,9 @@ def extract_features_and_train_tokens(paths, class_names, mid_window, mid_step, 
                 print("NaN Found! Feature vector not used for training")
         temp_features.append(np.array(temp))
     features = temp_features
+
+    print("AFTER temp_features section")
+    print(len(features))
 
 
     best_param = evaluate_classifier(features, class_names, 100, classifier_type,
@@ -791,18 +786,18 @@ def evaluate_classifier(features, class_names, n_exp, classifier_name, params,
     n_samples_total = 0
     for f in features:
         n_samples_total += f.shape[0]
-    if n_samples_total > 10000 and n_exp > 2:
-        n_exp = 2
-        print("Number of training experiments changed to 2 due to "
-              "very high number of samples")
-    elif n_samples_total > 2000 and n_exp > 5:
-        n_exp = 5
-        print("Number of training experiments changed to 5 due to "
-              "high number of samples")
-    elif n_samples_total > 1000 and n_exp > 10:
-        n_exp = 10
-        print("Number of training experiments changed to 10 due to "
-              "high number of samples")
+    # if n_samples_total > 10000 and n_exp > 2:
+    #     n_exp = 2
+    #     print("Number of training experiments changed to 2 due to "
+    #           "very high number of samples")
+    # elif n_samples_total > 2000 and n_exp > 5:
+    #     n_exp = 5
+    #     print("Number of training experiments changed to 5 due to "
+    #           "high number of samples")
+    # elif n_samples_total > 1000 and n_exp > 10:
+    #     n_exp = 10
+    #     print("Number of training experiments changed to 10 due to "
+    #           "high number of samples")
 
     for Ci, C in enumerate(params):
         # for each param value
@@ -812,6 +807,7 @@ def evaluate_classifier(features, class_names, n_exp, classifier_name, params,
             print("Param = {0:.5f} - classifier Evaluation "
                   "Experiment {1:d} of {2:d}".format(C, e+1, n_exp))
             # split features:
+
             if labels is not None:
                 f_train, f_test,labels_train,labels_test=random_split_features_multilabel(features_norm,train_percentage,labels=labels)
             else:
@@ -835,7 +831,7 @@ def evaluate_classifier(features, class_names, n_exp, classifier_name, params,
 
             if labels is not None:
                 #
-                y_pred=[classifier_wrapper(classifier,classifier_name,x) for x in f_test]
+                y_pred,prob=[classifier_wrapper(classifier,classifier_name,x) for x in f_test]
                 # res[ss], _ = classifier_wrapper(classifier,
                 #                                 classifier_name,
                 #                                 f_test)
