@@ -391,7 +391,7 @@ def extract_features_and_train_tokens(paths, class_names, mid_window, mid_step, 
     temp_features = []
 
     print("BEFORE temp_features section")
-    print(len(features))
+    print(len(features[0]))
     for feat in features:
         temp = []
         for i in range(feat.shape[0]):
@@ -404,7 +404,7 @@ def extract_features_and_train_tokens(paths, class_names, mid_window, mid_step, 
     features = temp_features
 
     print("AFTER temp_features section")
-    print(len(features))
+    print(len(features[0]))
 
 
     best_param = evaluate_classifier(features, class_names, 100, classifier_type,
@@ -1289,6 +1289,38 @@ def evaluate_model_for_folders(input_test_folders, model_name, model_type,
         plotly.offline.plot(figs, filename="temp.html", auto_open=True)
 
     return cm, thr_prre, pre, rec, thr_roc, fpr, tpr
+
+def model_predict(input_file,model_type,classifier, mean, std, classes, mid_window, mid_step, short_window, \
+            short_step, compute_beat):
+    # read audio file and convert to mono
+    sampling_rate, signal = audioBasicIO.read_audio_file(input_file)
+    signal = audioBasicIO.stereo_to_mono(signal)
+
+    if sampling_rate == 0:
+        # audio file IO problem
+        return -1, -1, -1
+    if signal.shape[0] / float(sampling_rate) < mid_window:
+        mid_window = signal.shape[0] / float(sampling_rate)
+
+    # feature extraction:
+    mid_features, s, _ = \
+        aF.mid_feature_extraction(signal, sampling_rate,
+                                  mid_window * sampling_rate,
+                                  mid_step * sampling_rate,
+                                  round(sampling_rate * short_window),
+                                  round(sampling_rate * short_step))
+    # long term averaging of mid-term statistics
+    mid_features = mid_features.mean(axis=1)
+    if compute_beat:
+        beat, beat_conf = aF.beat_extraction(s, short_step)
+        mid_features = np.append(mid_features, beat)
+        mid_features = np.append(mid_features, beat_conf)
+    feature_vector = (mid_features - mean) / std    # normalization
+
+    # classification
+    class_id, probability = classifier_wrapper(classifier, model_type,
+                                               feature_vector)
+    return class_id, probability, classes
 
 
 def file_classification(input_file, model_name, model_type):
