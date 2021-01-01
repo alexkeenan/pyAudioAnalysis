@@ -268,15 +268,15 @@ def token_paths_feature_extraction(path_list, mid_window, mid_step,
     features = []
     file_names = []
 
-    f, fn, feature_names = \
+    f, fn, feature_names,skipped_file_indexes = \
         word_token_feature_extraction(path_list, mid_window, mid_step,
                                         short_window, short_step,
-                                        compute_beat=compute_beat)
+                                        compute_beat=compute_beat,labels=labels)
     if f.shape[0] > 0:
         features.append(f)
         file_names.append(fn)
 
-    return features,  file_names
+    return features,  file_names,skipped_file_indexes
 
 
 def word_token_feature_extraction(wav_file_list, mid_window, mid_step,
@@ -301,6 +301,8 @@ def word_token_feature_extraction(wav_file_list, mid_window, mid_step,
 
     types = ('*.wav', '*.aif',  '*.aiff', '*.mp3', '*.au', '*.ogg')
 
+    skipped_file_indexes=[]
+
     #wav_file_list = sorted(wav_file_list)    
     wav_file_list2, mid_feature_names = [], []
     for i, file_path in enumerate(wav_file_list):
@@ -309,15 +311,18 @@ def word_token_feature_extraction(wav_file_list, mid_window, mid_step,
                                                             file_path))
         if os.stat(file_path).st_size == 0:
             print("   (EMPTY FILE -- SKIPPING)")
+            skipped_file_indexes.append(i)
             continue        
         sampling_rate, signal = audioBasicIO.read_audio_file(file_path)
         if sampling_rate == 0:
+            skipped_file_indexes.append(i)
             continue        
 
         t1 = time.time()        
         signal = audioBasicIO.stereo_to_mono(signal)
         if signal.shape[0] < float(sampling_rate)/5:
             print("  (AUDIO FILE TOO SMALL - SKIPPING)")
+            skipped_file_indexes.append(i)
             continue
         wav_file_list2.append(file_path)
         if compute_beat:
@@ -356,7 +361,9 @@ def word_token_feature_extraction(wav_file_list, mid_window, mid_step,
         print("Feature extraction complexity ratio: "
               "{0:.1f} x realtime".format((1.0 / 
                                            np.mean(np.array(process_times)))))
-    return mid_term_features, wav_file_list2, mid_feature_names
+
+    skipped_file_indexes=list(set(skipped_file_indexes))
+    return mid_term_features, wav_file_list2, mid_feature_names,skipped_file_indexes
 
 
 def directory_feature_extraction_no_avg(folder_path, mid_window, mid_step,
