@@ -271,7 +271,7 @@ def token_paths_feature_extraction(path_list, mid_window, mid_step,
     f, fn, feature_names,skipped_file_indexes = \
         word_token_feature_extraction(path_list, mid_window, mid_step,
                                         short_window, short_step,
-                                        compute_beat=compute_beat,labels=labels)
+                                        compute_beat=compute_beat)
     if f.shape[0] > 0:
         features.append(f)
         file_names.append(fn)

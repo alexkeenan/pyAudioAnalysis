@@ -354,7 +354,7 @@ def extract_features_and_train_tokens(paths, class_names, mid_window, mid_step, 
     features,  _ ,skipped_file_indexes= \
         aF.token_paths_feature_extraction(paths, mid_window, mid_step,
                                                  short_window, short_step,
-                                                 compute_beat=compute_beat,labels=labels)
+                                                 compute_beat=compute_beat)
 
     #getting rid of the labels for files with no features generated
     #this way features and labels will match
