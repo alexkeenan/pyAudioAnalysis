@@ -836,11 +836,14 @@ def evaluate_classifier(features, class_names, n_exp, classifier_name, params,
 
             if labels is not None:
                 #
-                y_pred,prob=[classifier_wrapper(classifier,classifier_name,x) for x in f_test]
+                pred_prob=[classifier_wrapper(classifier,classifier_name,x) for x in f_test]
+                y_pred=[x[0] for x in pred_prob]
+                #y_pred=[pred for pred,prob in classifier_wrapper(classifier,classifier_name,x) for x in f_test]
                 # res[ss], _ = classifier_wrapper(classifier,
                 #                                 classifier_name,
                 #                                 f_test)
                 y_pred=np.array(y_pred)
+                labels_test=np.array(labels_test)
                 y_pred=y_pred.reshape(labels_test.shape[0],-1)
                 cmt=multilabel_confusion_matrix(labels_test, y_pred)
 
