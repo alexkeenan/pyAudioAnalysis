@@ -22,6 +22,12 @@ import types
 from sklearn.model_selection import train_test_split
 from tune_sklearn import TuneGridSearchCV,TuneSearchCV
 from sklearn.metrics import f1_score, make_scorer
+import pathlib
+import pickle
+
+
+PROJECT_DIR=pathlib.Path(__file__).parent.absolute()
+FEATURES_DIR="features_folder"
 
 
 def signal_handler(signal, frame):
@@ -335,7 +341,9 @@ def extract_features_and_train_tokens(paths, class_names, mid_window, mid_step, 
                                compute_beat=False, 
                                train_percentage=0.80,
                                class_parameter_mode=1,
-                               labels=False):
+                               labels=False,
+                               extract_features_anew=False):
+
     """
     This function is used as a wrapper to segment-based audio feature extraction
     and classifier training.
@@ -351,11 +359,36 @@ def extract_features_and_train_tokens(paths, class_names, mid_window, mid_step, 
         parameters are saved on files.
     """
 
-    # STEP A: Feature Extraction:
-    features,  _ ,skipped_file_indexes= \
-        aF.token_paths_feature_extraction(paths, mid_window, mid_step,
-                                                 short_window, short_step,
-                                                 compute_beat=compute_beat)
+    def save_obj(obj, name ):
+        feature_save_path=str(PROJECT_DIR/FEATURES_DIR)
+        if not os.path.exists(feature_save_path):
+            os.makedirs(feature_save_path)
+        with open(feature_save_path+"/"+name + '.pkl', 'wb') as f:
+            pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
+
+    def load_obj(name):
+        with open(str(PROJECT_DIR/FEATURES_DIR) +"/"+ name + '.pkl', 'rb') as f:
+            return pickle.load(f)
+
+
+    try:
+        if extract_features_anew:
+            1/0
+        skipped_file_indexes=load_obj(f"skipped_file_indexes_{len(class_names)}")
+        features=load_obj(f"features_{len(class_names)}")
+        print('successfully loaded features')
+    except:
+
+        # STEP A: Feature Extraction:
+        features,  _ ,skipped_file_indexes= \
+            aF.token_paths_feature_extraction(paths, mid_window, mid_step,
+                                                    short_window, short_step,
+                                                    compute_beat=compute_beat)
+
+        save_obj(features,f"features_{len(class_names)}")
+        save_obj(skipped_file_indexes,f"skipped_file_indexes_{len(class_names)}")
+        print("saved feature extraction")
+
 
     #getting rid of the labels for files with no features generated
     #this way features and labels will match
@@ -425,7 +458,8 @@ def extract_features_and_train_tokens(paths, class_names, mid_window, mid_step, 
         max_iters=10,
         #search_optimization="bayesian",
         scoring="f1_micro",
-        n_jobs=-1
+        n_jobs=1,
+
     )
     #for scorer
     #https://stats.stackexchange.com/questions/437072/use-f1-score-in-gridsearchcv
