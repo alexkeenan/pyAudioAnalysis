@@ -20,6 +20,8 @@ import sklearn.metrics
 from sklearn.metrics import multilabel_confusion_matrix,f1_score
 import types
 from sklearn.model_selection import train_test_split
+from tune_sklearn import TuneGridSearchCV,TuneSearchCV
+from sklearn.metrics import f1_score, make_scorer
 
 
 def signal_handler(signal, frame):
@@ -257,7 +259,6 @@ def train_random_forest_multilabel(features, n_estimators,labels):
     """
 
 
-    feature_matrix, labels = features_to_matrix(features,labels)
 
 
     rf = sklearn.ensemble.RandomForestClassifier(n_estimators=n_estimators)
@@ -379,24 +380,26 @@ def extract_features_and_train_tokens(paths, class_names, mid_window, mid_step, 
     #         return
 
     # STEP B: classifier Evaluation and Parameter Selection:
-    if classifier_type == "svm" or classifier_type == "svm_rbf":
-        classifier_par = np.array([0.001, 0.01,  0.5, 1.0, 5.0, 10.0, 20.0])
-    elif classifier_type == "randomforest":
-        classifier_par = np.array([10, 25, 50, 100, 200, 500])
-    elif classifier_type == "knn":
-        classifier_par = np.array([1, 3, 5, 7, 9, 11, 13, 15])        
-    elif classifier_type == "gradientboosting":
-        classifier_par = np.array([10, 25, 50, 100, 200, 500])
-    elif classifier_type == "extratrees":
-        classifier_par = np.array([10, 25, 50, 100, 200, 500])
-    elif classifier_type == "randomforest_multilabel":
-        classifier_par = np.array([10, 25, 50, 100, 200, 500])
+    # if classifier_type == "svm" or classifier_type == "svm_rbf":
+    #     classifier_par = np.array([0.001, 0.01,  0.5, 1.0, 5.0, 10.0, 20.0])
+    # elif classifier_type == "randomforest":
+    #     classifier_par = np.array([10, 25, 50, 100, 200, 500])
+    # elif classifier_type == "knn":
+    #     classifier_par = np.array([1, 3, 5, 7, 9, 11, 13, 15])        
+    # elif classifier_type == "gradientboosting":
+    #     classifier_par = np.array([10, 25, 50, 100, 200, 500])
+    # elif classifier_type == "extratrees":
+    #     classifier_par = np.array([10, 25, 50, 100, 200, 500])
+    # elif classifier_type == "randomforest_multilabel":
+    #     classifier_par = np.array([10, 25, 50, 100, 200, 500])
 
+    if classifier_type == "randomforest_multilabel":
+        parameters = {'n_estimators': [100,200,300,400,500]} #,"criterion":["gini", "entropy"]
+        #parameters = {"criterion":["gini", "entropy"]} #,
+        rf = sklearn.ensemble.RandomForestClassifier()
 
     temp_features = []
 
-    print("BEFORE temp_features section")
-    print(len(features[0]))
     for feat in features:
         temp = []
         for i in range(feat.shape[0]):
@@ -408,52 +411,47 @@ def extract_features_and_train_tokens(paths, class_names, mid_window, mid_step, 
         temp_features.append(np.array(temp))
     features = temp_features
 
-    print("AFTER temp_features section")
-    print(len(features[0]))
 
+    # best_param = evaluate_classifier(features, class_names, 100, classifier_type,
+    #                                  classifier_par, class_parameter_mode, train_percentage,labels=labels)
 
-    best_param = evaluate_classifier(features, class_names, 100, classifier_type,
-                                     classifier_par, class_parameter_mode, train_percentage,labels=labels)
+    ################GRIDSEARCH########
+    #TuneGridSearchCV is exhaustive
+    #TuneSearchCV only samples a few
+    tune_search = TuneGridSearchCV(
+        rf,
+        parameters,
+        #early_stopping=True,
+        max_iters=10,
+        #search_optimization="bayesian",
+        scoring="f1_micro",
+        n_jobs=-1
+    )
+    #for scorer
+    #https://stats.stackexchange.com/questions/437072/use-f1-score-in-gridsearchcv
 
-    print("Selected params: {0:.5f}".format(best_param))
 
     features_norm, mean, std = normalize_features(features)
     mean = mean.tolist()
     std = std.tolist()
 
+    feature_matrix, labels = features_to_matrix(features,labels)
+
+
+    tune_search.fit(feature_matrix, labels)
+
+    print(f"Selected params: {tune_search.best_params_}")
+
     # STEP C: Save the classifier to file
-    if classifier_type == "svm":
-        classifier = train_svm(features_norm, best_param)
-    elif classifier_type == "svm_rbf":
-        classifier = train_svm(features_norm, best_param, kernel='rbf')
-    elif classifier_type == "randomforest":
-        classifier = train_random_forest(features_norm, best_param)
-    elif classifier_type == "gradientboosting":
-        classifier = train_gradient_boosting(features_norm, best_param)
-    elif classifier_type == "extratrees":
-        classifier = train_extra_trees(features_norm, best_param)
-    elif classifier_type == "randomforest_multilabel":
-        classifier = train_random_forest_multilabel(features_norm, best_param,labels)
 
-    if classifier_type == "knn":
-        feature_matrix, labels = features_to_matrix(features_norm)
-        feature_matrix = feature_matrix.tolist()
-        labels = labels.tolist()
-        save_path = model_name
-        save_parameters(save_path, feature_matrix, labels, mean, std,
-                        class_names, best_param, mid_window, mid_step,
-                        short_window, short_step, compute_beat)
+    classifier=tune_search.best_estimator_
 
-    elif classifier_type == "svm" or classifier_type == "svm_rbf" or \
-            classifier_type == "randomforest" or \
-            classifier_type == "randomforest_multilabel" or \
-            classifier_type == "gradientboosting" or \
-            classifier_type == "extratrees":
-        with open(model_name, 'wb') as fid:
-            cPickle.dump(classifier, fid)
-        save_path = model_name + "MEANS"
-        save_parameters(save_path, mean, std, class_names, mid_window, mid_step,
-                        short_window, short_step, compute_beat)
+    with open(model_name, 'wb') as fid:
+        cPickle.dump(classifier, fid)
+    save_path = model_name + "MEANS"
+    
+    save_parameters(save_path, mean, std, class_names, mid_window, mid_step,
+                    short_window, short_step, compute_beat)
 
 
 
@@ -755,6 +753,10 @@ def load_model(model_name, is_regression=False):
                short_window, short_step, compute_beat
 
 
+
+
+
+
 def evaluate_classifier(features, class_names, n_exp, classifier_name, params,
                         parameter_mode, train_percentage=0.80,labels=None):
     """
@@ -803,6 +805,14 @@ def evaluate_classifier(features, class_names, n_exp, classifier_name, params,
     #     n_exp = 10
     #     print("Number of training experiments changed to 10 due to "
     #           "high number of samples")
+
+
+
+
+
+
+
+
 
     for Ci, C in enumerate(params):
         # for each param value
