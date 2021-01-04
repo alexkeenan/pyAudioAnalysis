@@ -400,13 +400,13 @@ def train_tokens(features,paths, class_names, mid_window, mid_step, short_window
     ################GRIDSEARCH########
     #TuneGridSearchCV is exhaustive
     #TuneSearchCV only samples a few
-    tune_search = TuneGridSearchCV(
+    tune_search = TuneSearchCV(
         rf,
         parameters,
         #early_stopping=True,
-        max_iters=10,
+        max_iters=1,
         #search_optimization="bayesian",
-        scoring="f1_micro",
+        scoring="f1_weighted",
         n_jobs=1,
 
     )
