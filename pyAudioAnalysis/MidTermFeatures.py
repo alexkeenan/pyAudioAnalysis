@@ -272,11 +272,15 @@ def token_paths_feature_extraction(path_list, mid_window, mid_step,
         word_token_feature_extraction(path_list, mid_window, mid_step,
                                         short_window, short_step,
                                         compute_beat=compute_beat)
+
+    path_list=[i for j, i in enumerate(path_list) if j not in skipped_file_indexes]
+
+
     if f.shape[0] > 0:
         features.append(f)
-        file_names.append(fn)
+        #file_names.append(fn)
 
-    return features,  file_names,skipped_file_indexes
+    return features,  file_names,path_list
 
 
 def word_token_feature_extraction(wav_file_list, mid_window, mid_step,

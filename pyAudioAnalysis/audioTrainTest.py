@@ -336,7 +336,7 @@ def train_random_forest_regression(features, labels, n_estimators):
     return rf, train_err
 
 
-def extract_features_and_train_tokens(paths, class_names, mid_window, mid_step, short_window,
+def train_tokens(features,paths, class_names, mid_window, mid_step, short_window,
                                short_step, classifier_type, model_name,
                                compute_beat=False, 
                                train_percentage=0.80,
@@ -345,8 +345,7 @@ def extract_features_and_train_tokens(paths, class_names, mid_window, mid_step, 
                                extract_features_anew=False):
 
     """
-    This function is used as a wrapper to segment-based audio feature extraction
-    and classifier training.
+    This function is used as a wrapper for classifier training.
     ARGUMENTS:
         paths:                      Full path names to wave files
         mid_window, mid_step:       mid-term window length and step
@@ -359,42 +358,6 @@ def extract_features_and_train_tokens(paths, class_names, mid_window, mid_step, 
         parameters are saved on files.
     """
 
-    def save_obj(obj, name ):
-        feature_save_path=str(PROJECT_DIR/FEATURES_DIR)
-        if not os.path.exists(feature_save_path):
-            os.makedirs(feature_save_path)
-        with open(feature_save_path+"/"+name + '.pkl', 'wb') as f:
-            pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
-
-    def load_obj(name):
-        with open(str(PROJECT_DIR/FEATURES_DIR) +"/"+ name + '.pkl', 'rb') as f:
-            return pickle.load(f)
-
-
-    try:
-        if extract_features_anew:
-            1/0
-        skipped_file_indexes=load_obj(f"skipped_file_indexes_{len(class_names)}")
-        features=load_obj(f"features_{len(class_names)}")
-        print('successfully loaded features')
-    except:
-
-        # STEP A: Feature Extraction:
-        features,  _ ,skipped_file_indexes= \
-            aF.token_paths_feature_extraction(paths, mid_window, mid_step,
-                                                    short_window, short_step,
-                                                    compute_beat=compute_beat)
-
-        save_obj(features,f"features_{len(class_names)}")
-        save_obj(skipped_file_indexes,f"skipped_file_indexes_{len(class_names)}")
-        print("saved feature extraction")
-
-
-    #getting rid of the labels for files with no features generated
-    #this way features and labels will match
-    labels=[i for j, i in enumerate(labels) if j not in skipped_file_indexes]
-
-
     #check length of features and length of lables. where's the discrepancy?
     if len(features) == 0:
         print("trainSVM_feature ERROR: No data found in any input folder!")
@@ -406,30 +369,16 @@ def extract_features_and_train_tokens(paths, class_names, mid_window, mid_step, 
 
     write_train_data_arff(model_name, features, class_names, feature_names)
 
-    # for i, feat in enumerate(features):
-    #     if len(feat) == 0:
-    #         print("trainSVM_feature ERROR: " + paths[i] +
-    #               " folder is empty or non-existing!")
-    #         return
 
-    # STEP B: classifier Evaluation and Parameter Selection:
-    # if classifier_type == "svm" or classifier_type == "svm_rbf":
-    #     classifier_par = np.array([0.001, 0.01,  0.5, 1.0, 5.0, 10.0, 20.0])
-    # elif classifier_type == "randomforest":
-    #     classifier_par = np.array([10, 25, 50, 100, 200, 500])
-    # elif classifier_type == "knn":
-    #     classifier_par = np.array([1, 3, 5, 7, 9, 11, 13, 15])        
-    # elif classifier_type == "gradientboosting":
-    #     classifier_par = np.array([10, 25, 50, 100, 200, 500])
-    # elif classifier_type == "extratrees":
-    #     classifier_par = np.array([10, 25, 50, 100, 200, 500])
-    # elif classifier_type == "randomforest_multilabel":
-    #     classifier_par = np.array([10, 25, 50, 100, 200, 500])
+
 
     if classifier_type == "randomforest_multilabel":
         parameters = {'n_estimators': [100,200,300,400,500]} #,"criterion":["gini", "entropy"]
         #parameters = {"criterion":["gini", "entropy"]} #,
         rf = sklearn.ensemble.RandomForestClassifier()
+
+
+
 
     temp_features = []
 
@@ -486,6 +435,8 @@ def extract_features_and_train_tokens(paths, class_names, mid_window, mid_step, 
     
     save_parameters(save_path, mean, std, class_names, mid_window, mid_step,
                     short_window, short_step, compute_beat)
+
+    print("FINISHED TRAINING")
 
 
 
