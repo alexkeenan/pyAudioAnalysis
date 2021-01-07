@@ -401,6 +401,7 @@ def train_tokens(features,paths, class_names, mid_window, mid_step, short_window
     std = std.tolist()
 
     feature_matrix, labels = features_to_matrix(features_norm,labels)
+    print("TRAINING")
 
     ################GRIDSEARCH########
     #TuneGridSearchCV is exhaustive
@@ -408,34 +409,34 @@ def train_tokens(features,paths, class_names, mid_window, mid_step, short_window
     """
     # gridsearch is failing a lot, might be due to memory issues
     """
-    # tune_search = TuneSearchCV(
-    #     rf,
-    #     parameters,
-    #     #early_stopping=True,
-    #     max_iters=1,
-    #     #search_optimization="bayesian",
-    #     scoring="f1_weighted",
-    #     n_jobs=1,
+    tune_search = TuneSearchCV(
+        rf,
+        parameters,
+        #early_stopping=True,
+        max_iters=1,
+        #search_optimization="bayesian",
+        scoring="f1_weighted",
+        n_jobs=-1,
 
-    # )
-
-    # #for scorer
-    # #https://stats.stackexchange.com/questions/437072/use-f1-score-in-gridsearchcv
-
-    # tune_search.fit(feature_matrix, labels)
-
-    # print(f"Selected params: {tune_search.best_params_}")
-    # clf=tune_search.best_estimator_
-
-    
-    print("TRAINING")
-    clf = sklearn.ensemble.RandomForestClassifier(
-        n_estimators=400,
-        # criterion="entropy",
-        n_jobs=-1
     )
 
-    clf.fit(feature_matrix, labels)
+    #for scorer
+    #https://stats.stackexchange.com/questions/437072/use-f1-score-in-gridsearchcv
+
+    tune_search.fit(feature_matrix, labels)
+
+    print(f"Selected params: {tune_search.best_params_}")
+    clf=tune_search.best_estimator_
+
+    
+    
+    # clf = sklearn.ensemble.RandomForestClassifier(
+    #     n_estimators=400,
+    #     # criterion="entropy",
+    #     n_jobs=-1
+    # )
+
+    # clf.fit(feature_matrix, labels)
 
     print("finished training")
 
