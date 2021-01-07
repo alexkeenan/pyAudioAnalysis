@@ -340,7 +340,6 @@ def train_tokens(features,paths, class_names, mid_window, mid_step, short_window
                                short_step, classifier_type, model_name,
                                compute_beat=False, 
                                train_percentage=0.80,
-                               class_parameter_mode=1,
                                labels=False,
                                extract_features_anew=False):
 
@@ -373,7 +372,7 @@ def train_tokens(features,paths, class_names, mid_window, mid_step, short_window
 
 
     if classifier_type == "randomforest_multilabel":
-        parameters = {'n_estimators': [500] ,"criterion":["gini", "entropy"]}
+        parameters = {'n_estimators': [300] ,"criterion":["gini", "entropy"]}
         #parameters = {"criterion":["gini", "entropy"]} #,
         rf = sklearn.ensemble.RandomForestClassifier()
 
@@ -392,45 +391,61 @@ def train_tokens(features,paths, class_names, mid_window, mid_step, short_window
                 print("NaN Found! Feature vector not used for training")
         temp_features.append(np.array(temp))
     features = temp_features
+    del feat
+    del temp_features
 
 
-    # best_param = evaluate_classifier(features, class_names, 100, classifier_type,
-    #                                  classifier_par, class_parameter_mode, train_percentage,labels=labels)
+    features_norm, mean, std = normalize_features(features)
+    del features
+    mean = mean.tolist()
+    std = std.tolist()
+
+    feature_matrix, labels = features_to_matrix(features_norm,labels)
 
     ################GRIDSEARCH########
     #TuneGridSearchCV is exhaustive
     #TuneSearchCV only samples a few
-    tune_search = TuneSearchCV(
-        rf,
-        parameters,
-        #early_stopping=True,
-        max_iters=1,
-        #search_optimization="bayesian",
-        scoring="f1_weighted",
-        n_jobs=1,
+    """
+    # gridsearch is failing a lot, might be due to memory issues
+    """
+    # tune_search = TuneSearchCV(
+    #     rf,
+    #     parameters,
+    #     #early_stopping=True,
+    #     max_iters=1,
+    #     #search_optimization="bayesian",
+    #     scoring="f1_weighted",
+    #     n_jobs=1,
 
+    # )
+
+    # #for scorer
+    # #https://stats.stackexchange.com/questions/437072/use-f1-score-in-gridsearchcv
+
+    # tune_search.fit(feature_matrix, labels)
+
+    # print(f"Selected params: {tune_search.best_params_}")
+    # clf=tune_search.best_estimator_
+
+    
+    print("TRAINING")
+    clf = sklearn.ensemble.RandomForestClassifier(
+        n_estimators=400,
+        # criterion="entropy",
+        n_jobs=-1
     )
-    #for scorer
-    #https://stats.stackexchange.com/questions/437072/use-f1-score-in-gridsearchcv
 
+    clf.fit(feature_matrix, labels)
 
-    features_norm, mean, std = normalize_features(features)
-    mean = mean.tolist()
-    std = std.tolist()
-
-    feature_matrix, labels = features_to_matrix(features,labels)
-
-
-    tune_search.fit(feature_matrix, labels)
-
-    print(f"Selected params: {tune_search.best_params_}")
+    print("finished training")
 
     # STEP C: Save the classifier to file
-
-    classifier=tune_search.best_estimator_
-
+    
     with open(model_name, 'wb') as fid:
-        cPickle.dump(classifier, fid)
+        cPickle.dump(clf, fid)
+    print("saved model")
+    del clf
+
     save_path = model_name + "MEANS"
     
     save_parameters(save_path, mean, std, class_names, mid_window, mid_step,
