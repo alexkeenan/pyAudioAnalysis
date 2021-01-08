@@ -415,7 +415,7 @@ def train_tokens(features,paths, class_names, mid_window, mid_step, short_window
         #early_stopping=True,
         max_iters=1,
         #search_optimization="bayesian",
-        scoring="f1_weighted",
+        scoring="f1_micro",
         n_jobs=-1,
 
     )
