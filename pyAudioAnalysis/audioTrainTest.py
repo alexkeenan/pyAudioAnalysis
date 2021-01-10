@@ -24,6 +24,10 @@ from tune_sklearn import TuneGridSearchCV,TuneSearchCV
 from sklearn.metrics import f1_score, make_scorer
 import pathlib
 import pickle
+import logging
+
+
+
 
 
 PROJECT_DIR=pathlib.Path(__file__).parent.absolute()
@@ -372,7 +376,7 @@ def train_tokens(features,paths, class_names, mid_window, mid_step, short_window
 
 
     if classifier_type == "randomforest_multilabel":
-        parameters = {'n_estimators': [300] ,"criterion":["gini", "entropy"]}
+        parameters = {'n_estimators': [300,400,500,600] ,"criterion":["gini", "entropy"]}
         #parameters = {"criterion":["gini", "entropy"]} #,
         rf = sklearn.ensemble.RandomForestClassifier()
 
@@ -426,6 +430,10 @@ def train_tokens(features,paths, class_names, mid_window, mid_step, short_window
     tune_search.fit(feature_matrix, labels)
 
     print(f"Selected params: {tune_search.best_params_}")
+
+    logging.basicConfig(filename='model_params.log', filemode='w', format='%(name)s - %(levelname)s - %(message)s')
+    logging.info(f"Model: {model_name} | Selected params: {tune_search.best_params_}")
+
     clf=tune_search.best_estimator_
 
     
