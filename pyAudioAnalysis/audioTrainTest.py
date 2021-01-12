@@ -376,7 +376,8 @@ def train_tokens(features,paths, class_names, mid_window, mid_step, short_window
 
 
     if classifier_type == "randomforest_multilabel":
-        parameters = {'n_estimators': [300,400,500,600] ,"criterion":["gini", "entropy"]}
+        #parameters = {'n_estimators': [300,400,500,600] ,"criterion":["gini", "entropy"],'class_weight':["balanced"]}
+        parameters = {'n_estimators': [50] ,"criterion":["entropy"],'class_weight':["balanced"]}
         #parameters = {"criterion":["gini", "entropy"]} #,
         rf = sklearn.ensemble.RandomForestClassifier()
 
@@ -431,8 +432,9 @@ def train_tokens(features,paths, class_names, mid_window, mid_step, short_window
 
     print(f"Selected params: {tune_search.best_params_}")
 
-    logging.basicConfig(filename='model_params.log', filemode='w', format='%(name)s - %(levelname)s - %(message)s')
-    logging.info(f"Model: {model_name} | Selected params: {tune_search.best_params_}")
+    logging.basicConfig(filename='model_params.log', level=logging.DEBUG)
+    logging.debug(f"{tune_search.best_score_} f1_micro | Model: {model_name.split('/')[-1]} | Selected params: {tune_search.best_params_}")
+
 
     clf=tune_search.best_estimator_
 
