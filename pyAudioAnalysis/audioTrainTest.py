@@ -376,8 +376,8 @@ def train_tokens(features,paths, class_names, mid_window, mid_step, short_window
 
 
     if classifier_type == "randomforest_multilabel":
-        #parameters = {'n_estimators': [300,400,500,600] ,"criterion":["gini", "entropy"],'class_weight':["balanced"]}
-        parameters = {'n_estimators': [50] ,"criterion":["entropy"],'class_weight':["balanced"]}
+        parameters = {'n_estimators': [300,400,500,600] ,"criterion":["gini", "entropy"],'class_weight':["balanced"]}
+        #parameters = {'n_estimators': [50] ,"criterion":["entropy"],'class_weight':["balanced"]}
         #parameters = {"criterion":["gini", "entropy"]} #,
         rf = sklearn.ensemble.RandomForestClassifier()
 
